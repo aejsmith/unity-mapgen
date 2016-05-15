@@ -16,6 +16,8 @@ using System.Reflection;
 using Debug = UnityEngine.Debug;
 
 namespace MapGen {
+    sealed class WorldLoadFinishMessage {};
+
     class MapGenTileController : ITileController {
         private readonly object m_lockObj = new object();
 
@@ -107,8 +109,12 @@ namespace MapGen {
                         m_nextY++;
                     }
 
-                    if (m_nextY <= m_endY)
+                    if (m_nextY <= m_endY) {
                         LoadNext();
+                    } else {
+                        /* Notify the exporter that we have finished. */
+                        m_messageBus.Send(new WorldLoadFinishMessage());
+                    }
                 });
         }
 

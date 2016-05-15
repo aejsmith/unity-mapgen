@@ -6,17 +6,25 @@ using UnityEditor;
 
 namespace MapGen {
     public class MapGenTileExporter {
+        /** Path to export world to. */
         private const string k_exportDir = "Exported";
         private const string k_exportPath = "Assets/" + k_exportDir;
 
         private readonly MapGenManager m_manager;
 
+        /** Container object for all generated tiles. */
+        private GameObject m_containerObject;
+
         public MapGenTileExporter(MapGenManager manager) {
             m_manager = manager;
 
-            /* Delete any existing exported assets. */
+            /* Delete any existing exported assets, create new folder. */
             AssetDatabase.DeleteAsset(k_exportPath);
             AssetDatabase.CreateFolder("Assets", k_exportDir);
+            AssetDatabase.CreateFolder(k_exportPath, "Meshes");
+
+            /* Create the container object. */
+            m_containerObject = new GameObject("Map");
         }
 
         private class CombinedMesh {
@@ -24,7 +32,7 @@ namespace MapGen {
             public List<CombineInstance> combines = new List<CombineInstance>();
         };
 
-        public void Export(Tile tile) {
+        public void ExportTile(Tile tile) {
             int tileIndexX = (int)(tile.MapCenter.X / m_manager.TileSize);
             int tileIndexY = (int)(tile.MapCenter.Y / m_manager.TileSize);
 
@@ -69,6 +77,7 @@ namespace MapGen {
             /* Create a container for the merged tile. */
             GameObject newObject = new GameObject("Tile " + tileIndexX + " " + tileIndexY);
             newObject.SetActive(false);
+            newObject.transform.parent = m_containerObject.transform;
             newObject.isStatic = true;
 
             /* Generate new objects out of all the combined meshes. */
@@ -81,20 +90,28 @@ namespace MapGen {
 
                 wastage += 65534 - combinedMesh.totalVertexCount;
 
-                GameObject childObject = new GameObject("Mesh " + meshIndex);
-                meshIndex++;
-                childObject.transform.parent = newObject.transform;
-
                 Mesh mesh = new Mesh();
                 mesh.CombineMeshes(combinedMesh.combines.ToArray());
                 mesh.Optimize();
 
-                // FIXME: use sharedMesh when exporting
-                childObject.AddComponent<MeshFilter>().mesh = mesh;
+                /* Save the mesh as a new asset. */
+                MeshUtility.SetMeshCompression(mesh, ModelImporterMeshCompression.Medium);
+                AssetDatabase.CreateAsset(
+                    mesh,
+                    String.Format("{0}/Meshes/Tile_{1}_{2}_{3}.asset", k_exportPath, tileIndexX, tileIndexY, meshIndex));
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+
+                /* Create an object to render this mesh. */
+                GameObject childObject = new GameObject("Mesh " + meshIndex);
+                childObject.transform.parent = newObject.transform;
+                childObject.AddComponent<MeshFilter>().sharedMesh = mesh;
                 childObject.AddComponent<MeshRenderer>().sharedMaterial = m_manager.CombinedMaterial;
 
                 if (m_manager.AddColliders)
                     childObject.AddComponent<MeshCollider>();
+
+                meshIndex++;
             }
 
             origObject.SetActive(false);
@@ -105,8 +122,14 @@ namespace MapGen {
                 tileIndexX, tileIndexY, wastage));
         }
 
-        public void CreateAsset(UnityEngine.Object asset, string name) {
-            AssetDatabase.CreateAsset(asset, k_exportPath + "/" + name);
+        public void Finish() {
+            /* Create a prefab out of the world. */
+            UnityEngine.Object prefab = PrefabUtility.CreateEmptyPrefab(k_exportPath + "/Map.prefab");
+            PrefabUtility.ReplacePrefab(m_containerObject, prefab, ReplacePrefabOptions.ConnectToPrefab);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            Debug.LogWarning("Map export complete");
         }
     }
 }

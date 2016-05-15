@@ -18,12 +18,19 @@ namespace MapGen {
             m_manager = manager;
 
             IMessageBus messageBus = m_manager.GetService<IMessageBus>();
-            messageBus.AsObservable<TileLoadFinishMessage>().Do(m => OnTileBuildFinished(m.Tile)).Subscribe();
+            messageBus.AsObservable<TileLoadFinishMessage>().Do(m => OnTileLoadFinish(m.Tile)).Subscribe();
+            messageBus.AsObservable<WorldLoadFinishMessage>().Do(m => OnWorldLoadFinish()).Subscribe();
         }
 
-        private void OnTileBuildFinished(Tile tile) {
+        private void OnTileLoadFinish(Tile tile) {
             Observable.Start(
-                () => m_manager.GetService<MapGenTileExporter>().Export(tile),
+                () => m_manager.GetService<MapGenTileExporter>().ExportTile(tile),
+                Scheduler.MainThread).Wait();
+        }
+
+        private void OnWorldLoadFinish() {
+            Observable.Start(
+                () => m_manager.GetService<MapGenTileExporter>().Finish(),
                 Scheduler.MainThread).Wait();
         }
     }
