@@ -7,7 +7,7 @@ using UnityEditor;
 namespace MapGen {
     public class MapGenTileExporter {
         /** Path to export world to. */
-        private const string k_exportDir = "Exported";
+        private const string k_exportDir = "Generated";
         private const string k_exportPath = "Assets/" + k_exportDir;
 
         private readonly MapGenManager m_manager;

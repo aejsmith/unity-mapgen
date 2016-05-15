@@ -37,5 +37,5 @@ sysinfo.txt
 /Assets/Resources/Maps/elevation/*.hgt*
 /Assets/Resources/Maps/osm/.cache
 
-# Exported data
-/Assets/Exported*
+# Generated data
+/Assets/Generated*

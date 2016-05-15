@@ -32,14 +32,14 @@ namespace MapGen {
         /** Tile size (metres). */
         public float TileSize = 500;
 
-        /** World size (tiles). */
+        /** Total world size (tiles). */
         public Vector2 WorldSize = new Vector2(3, 3);
+
+        /** High detail world size (tiles). */
+        public Vector2 DetailedWorldSize = new Vector2(3, 3);
 
         /** Material to use for the combined objects. */
         public Material CombinedMaterial;
-
-        /** Rendering mode. */
-        public RenderMode WorldRenderMode = RenderMode.Scene;
 
         /** Whether to filter out info nodes. */
         public bool FilterInfoNodes = true;
@@ -88,7 +88,7 @@ namespace MapGen {
             Config = ConfigBuilder.GetDefault()
                 .SetTileSettings(TileSize, 40)
                 .SetRenderOptions(
-                    WorldRenderMode,
+                    RenderMode.Scene,
                     new Rectangle2d(0, 0, TileSize, TileSize))
                 .Build();
 
@@ -116,8 +116,29 @@ namespace MapGen {
         }
 
         void OnValidate() {
+            if (WorldSize.x <= 0)
+                WorldSize.x = 1;
             WorldSize.x = ((WorldSize.x % 2) != 0) ? WorldSize.x : WorldSize.x - 1;
+
+            if (WorldSize.y <= 0)
+                WorldSize.y = 1;
             WorldSize.y = ((WorldSize.y % 2) != 0) ? WorldSize.y : WorldSize.y - 1;
+
+            if (DetailedWorldSize.x > WorldSize.x) {
+                DetailedWorldSize.x = WorldSize.x;
+            } else if (DetailedWorldSize.x > 0) {
+                DetailedWorldSize.x = ((DetailedWorldSize.x % 2) != 0) ? DetailedWorldSize.x : DetailedWorldSize.x - 1;
+            } else {
+                DetailedWorldSize.x = 0;
+            }
+
+            if (DetailedWorldSize.y > WorldSize.y) {
+                DetailedWorldSize.y = WorldSize.y;
+            } else if (DetailedWorldSize.y > 0) {
+                DetailedWorldSize.y = ((DetailedWorldSize.y % 2) != 0) ? DetailedWorldSize.y : DetailedWorldSize.y - 1;
+            } else {
+                DetailedWorldSize.y = 0;
+            }
         }
 
         public T GetService<T>() {

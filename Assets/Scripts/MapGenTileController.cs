@@ -72,13 +72,19 @@ namespace MapGen {
         private void LoadNext() {
             Debug.Log("Load tile " + m_nextX + ", " + m_nextY);
 
+            RenderMode mode =
+                (Math.Abs(m_nextX) < (((int)m_manager.DetailedWorldSize.x + 1) / 2) &&
+                    Math.Abs(m_nextY) < (((int)m_manager.DetailedWorldSize.y + 1) / 2))
+                ? RenderMode.Scene
+                : RenderMode.Overview;
+
             var tileCenter = new Vector2d(
                 m_nextX * m_manager.TileSize,
                 m_nextY * m_manager.TileSize);
             var tile = new Tile(
                 m_manager.Centre,
                 tileCenter,
-                m_manager.WorldRenderMode,
+                mode,
                 new Canvas(m_objectPool),
                 m_manager.TileSize,
                 m_manager.TileSize);
