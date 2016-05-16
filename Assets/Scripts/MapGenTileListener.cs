@@ -23,15 +23,11 @@ namespace MapGen {
         }
 
         private void OnTileLoadFinish(Tile tile) {
-            Observable.Start(
-                () => m_manager.GetService<MapGenTileExporter>().ExportTile(tile),
-                Scheduler.MainThread).Wait();
+            m_manager.GetService<MapGenTileExporter>().ExportTile(tile);
         }
 
         private void OnWorldLoadFinish() {
-            Observable.Start(
-                () => m_manager.GetService<MapGenTileExporter>().Finish(),
-                Scheduler.MainThread).Wait();
+            m_manager.GetService<MapGenTileExporter>().Finish();
         }
     }
 }

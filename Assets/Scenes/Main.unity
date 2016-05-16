@@ -201,9 +201,11 @@ MonoBehaviour:
   CentreLatitude: 53.959055499999998
   CentreLongitude: -1.0815360999999999
   TileSize: 500
-  WorldSize: {x: 3, y: 3}
+  WorldSize: {x: 1, y: 1}
+  DetailedWorldSize: {x: 1, y: 1}
   CombinedMaterial: {fileID: 2100000, guid: 02db822e4dc907744bd988578087550c, type: 2}
-  WorldRenderMode: 0
+  EnableMeshReduction: 1
+  EnableExport: 0
   FilterInfoNodes: 1
   AddColliders: 0
 --- !u!1 &1313460263

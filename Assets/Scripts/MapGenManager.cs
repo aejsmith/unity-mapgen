@@ -15,6 +15,7 @@ using ActionStreetMap.Infrastructure.Reactive;
 using ActionStreetMap.Maps.GeoCoding;
 using ActionStreetMap.Unity.IO;
 using UnityEngine;
+using UnityEngine.Assertions;
 
 using Component = ActionStreetMap.Infrastructure.Dependencies.Component;
 using RenderMode = ActionStreetMap.Core.RenderMode;
@@ -41,6 +42,12 @@ namespace MapGen {
         /** Material to use for the combined objects. */
         public Material CombinedMaterial;
 
+        /** Whether to enable mesh reduction. */
+        public bool EnableMeshReduction = true;
+
+        /** Whether to enable asset exporting. */
+        public bool EnableExport = true;
+
         /** Whether to filter out info nodes. */
         public bool FilterInfoNodes = true;
 
@@ -66,6 +73,8 @@ namespace MapGen {
         private ITileController m_tileController;
 
         void Awake() {
+            Assert.raiseExceptions = true;
+
             IsInitialized = false;
             Centre = new GeoCoordinate(CentreLatitude, CentreLongitude);
 
