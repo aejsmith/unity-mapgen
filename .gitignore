@@ -22,7 +22,6 @@ ExportedObj/
 *.booproj
 *.svd
 
-
 # Unity3D generated meta files
 *.pidb.meta
 
@@ -34,8 +33,8 @@ sysinfo.txt
 *.unitypackage
 
 # ASM cached data
-/Assets/Resources/Maps/elevation/*.hgt*
-/Assets/Resources/Maps/osm/.cache
+/Assets/Map/Resources/Maps/elevation/*.hgt*
+/Assets/Map/Resources/Maps/osm/.cache
 
 # Generated data
-/Assets/Generated*
+/Assets/Map/Generated*

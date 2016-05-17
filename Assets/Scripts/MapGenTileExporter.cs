@@ -20,8 +20,9 @@ namespace MapGen {
         };
 
         /** Path to export world to. */
+        private const string k_exportParent = "Assets/Map";
         private const string k_exportDir = "Generated";
-        private const string k_exportPath = "Assets/" + k_exportDir;
+        private const string k_exportPath = k_exportParent + "/" + k_exportDir;
 
         private readonly MapGenManager m_manager;
 
@@ -40,7 +41,7 @@ namespace MapGen {
             if (m_manager.EnableExport) {
                 /* Delete any existing exported assets, create new folder. */
                 AssetDatabase.DeleteAsset(k_exportPath);
-                AssetDatabase.CreateFolder("Assets", k_exportDir);
+                AssetDatabase.CreateFolder(k_exportParent, k_exportDir);
                 AssetDatabase.CreateFolder(k_exportPath, "Meshes");
             }
 
