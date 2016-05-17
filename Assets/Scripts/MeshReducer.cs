@@ -193,10 +193,10 @@ namespace MapGen {
             int targetVertices = (int)((float)origVertices.Length * factor);
 
             /* Collapse until we reach this target. */
-            while (m_vertices.Count > targetVertices) {
-                Vertex vertex = MinimumCostEdge();
-                Collapse(vertex, vertex.collapse);
-            }
+            //while (m_vertices.Count > targetVertices) {
+            //    Vertex vertex = MinimumCostEdge();
+            //    Collapse(vertex, vertex.collapse);
+            //}
 
             /* Create new vertex data. */
             Vector3[] newVertices = new Vector3[m_vertices.Count];
@@ -231,6 +231,7 @@ namespace MapGen {
                     mesh.colors = newColours;
                     mesh.triangles = newTriangles;
                     mesh.RecalculateNormals();
+                    mesh.Optimize();
                     return mesh;
                 },
                 Scheduler.MainThread).Wait();

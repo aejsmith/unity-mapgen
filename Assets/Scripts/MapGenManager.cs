@@ -43,7 +43,7 @@ namespace MapGen {
         public Material CombinedMaterial;
 
         /** Whether to enable mesh reduction. */
-        public bool EnableMeshReduction = true;
+        public bool EnableMeshReduction = false;
 
         /** Whether to enable asset exporting. */
         public bool EnableExport = true;
@@ -52,7 +52,7 @@ namespace MapGen {
         public bool FilterInfoNodes = true;
 
         /** Whether to add physics colliders. */
-        public bool AddColliders = true;
+        public bool AddColliders = false;
 
         public GeoCoordinate Centre { get; private set; }
         public IConfigSection Config { get; private set; }
@@ -73,9 +73,12 @@ namespace MapGen {
         private ITileController m_tileController;
 
         void Awake() {
+            IsInitialized = false;
+        }
+
+        void OnEnable() {
             Assert.raiseExceptions = true;
 
-            IsInitialized = false;
             Centre = new GeoCoordinate(CentreLatitude, CentreLongitude);
 
             Scheduler.MainThread = UnityMainThreadScheduler.MainThread;
@@ -104,9 +107,7 @@ namespace MapGen {
             m_gameRunner = new GameRunner(m_container, Config);
             m_gameRunner.RegisterPlugin<MapGenBootstrapper>("mapgen", this);
             m_gameRunner.Bootstrap();
-        }
 
-        void OnEnable() {
             Observable.Start(
                 () => {
                     m_tileController = GetService<ITileController>();

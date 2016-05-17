@@ -46,6 +46,12 @@ namespace MapGen {
 
             /* Create the container object. */
             m_containerObject = new GameObject("Map");
+            MapProperties properties = m_containerObject.AddComponent<MapProperties>();
+            properties.CentreLatitude = m_manager.CentreLatitude;
+            properties.CentreLongitude = m_manager.CentreLongitude;
+            properties.TileSize = m_manager.TileSize;
+            properties.WorldSize = m_manager.WorldSize;
+            properties.DetailedWorldSize = m_manager.DetailedWorldSize;
         }
 
         public void ExportTile(Tile tile) {
