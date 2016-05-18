@@ -8,21 +8,28 @@ using UnityEditor;
 
 namespace MapGen {
     public class MapGenTileExporter {
+        private enum MeshType {
+            Generic,
+            Water,
+        };
+
         private class SourceMesh {
+            public MeshType type;
             public Mesh mesh;
             public Matrix4x4 transform;
             public int vertexCount;
         };
 
         private class CombinedMesh {
-            public int totalVertexCount = 0;
+            public MeshType type;
+            public int totalVertexCount;
             public List<CombineInstance> combines = new List<CombineInstance>();
         };
 
         /** Path to export world to. */
-        private const string k_exportParent = "Assets/Map";
-        private const string k_exportDir = "Generated";
-        private const string k_exportPath = k_exportParent + "/" + k_exportDir;
+        private const string ExportParent = "Assets/Map";
+        private const string ExportDir = "Generated";
+        private const string ExportPath = ExportParent + "/" + ExportDir;
 
         private readonly MapGenManager m_manager;
 
@@ -40,9 +47,9 @@ namespace MapGen {
 
             if (m_manager.EnableExport) {
                 /* Delete any existing exported assets, create new folder. */
-                AssetDatabase.DeleteAsset(k_exportPath);
-                AssetDatabase.CreateFolder(k_exportParent, k_exportDir);
-                AssetDatabase.CreateFolder(k_exportPath, "Meshes");
+                AssetDatabase.DeleteAsset(ExportPath);
+                AssetDatabase.CreateFolder(ExportParent, ExportDir);
+                AssetDatabase.CreateFolder(ExportPath, "Meshes");
             }
 
             /* Create the container object. */
@@ -89,7 +96,7 @@ namespace MapGen {
              * the main thread.
              */
             GameObject origObject = m_tile.GameObject.GetComponent<GameObject>();
-            var origMeshes = new List<SourceMesh>();
+            var sourceMeshes = new List<SourceMesh>();
             Observable.Start(
                 () => {
                     Component[] components = origObject.GetComponentsInChildren<MeshFilter>();
@@ -97,11 +104,18 @@ namespace MapGen {
                         if (m_manager.FilterInfoNodes && meshFilter.name.StartsWith("info Node"))
                             continue;
 
-                        SourceMesh origMesh = new SourceMesh();
-                        origMesh.mesh = meshFilter.mesh;
-                        origMesh.transform = meshFilter.transform.localToWorldMatrix;
-                        origMesh.vertexCount = meshFilter.mesh.vertexCount;
-                        origMeshes.Add(origMesh);
+                        SourceMesh sourceMesh = new SourceMesh();
+
+                        if (meshFilter.name == "water") {
+                            sourceMesh.type = MeshType.Water;
+                        } else {
+                            sourceMesh.type = MeshType.Generic;
+                        }
+
+                        sourceMesh.mesh = meshFilter.mesh;
+                        sourceMesh.transform = meshFilter.transform.localToWorldMatrix;
+                        sourceMesh.vertexCount = meshFilter.mesh.vertexCount;
+                        sourceMeshes.Add(sourceMesh);
                     }
                 },
                 Scheduler.MainThread).Wait();
@@ -110,32 +124,42 @@ namespace MapGen {
              * Try to combine all the meshes into smaller meshes. Basic bin
              * packing problem, use a greedy first-fit algorithm.
              */
-            foreach (SourceMesh origMesh in origMeshes) {
-                Mesh mesh = origMesh.mesh;
-                int vertexCount = origMesh.vertexCount;
+            foreach (SourceMesh sourceMesh in sourceMeshes) {
+                Mesh mesh = sourceMesh.mesh;
+                int vertexCount = sourceMesh.vertexCount;
 
                 /* Reduce the complexity of the mesh. */
                 if (m_manager.EnableMeshReduction)
                     mesh = new MeshReducer().Reduce(mesh, 0.9f, out vertexCount);
 
+                MeshType combinedType =
+                    (m_manager.EnableWaterSeparation && sourceMesh.type == MeshType.Water)
+                        ? MeshType.Water
+                        : MeshType.Generic;
+
                 /* Find a mesh that can fit this one. */
-                CombinedMesh targetMesh = null;
+                CombinedMesh combinedMesh = null;
                 foreach (CombinedMesh existingMesh in m_meshes) {
-                    if (existingMesh.totalVertexCount + vertexCount <= 65534) {
-                        targetMesh = existingMesh;
-                        break;
+                    if (existingMesh.type != combinedType) {
+                        continue;
+                    } else if (existingMesh.totalVertexCount + vertexCount > 65534) {
+                        continue;
                     }
+
+                    combinedMesh = existingMesh;
+                    break;
                 }
-                if (targetMesh == null) {
-                    targetMesh = new CombinedMesh();
-                    m_meshes.Add(targetMesh);
+                if (combinedMesh == null) {
+                    combinedMesh = new CombinedMesh();
+                    combinedMesh.type = combinedType;
+                    m_meshes.Add(combinedMesh);
                 }
 
                 CombineInstance combine = new CombineInstance();
                 combine.mesh = mesh;
-                combine.transform = origMesh.transform;
-                targetMesh.combines.Add(combine);
-                targetMesh.totalVertexCount += vertexCount;
+                combine.transform = sourceMesh.transform;
+                combinedMesh.combines.Add(combine);
+                combinedMesh.totalVertexCount += vertexCount;
             }
         }
         
@@ -160,19 +184,30 @@ namespace MapGen {
                 mesh.CombineMeshes(combinedMesh.combines.ToArray());
                 mesh.Optimize();
 
+                if (combinedMesh.type == MeshType.Water) {
+                    /*
+                     * Flatten the water surface. The reason for the water
+                     * separation is so that it can have Unity's water shader
+                     * placed on it. This does not look right with a non-flat
+                     * surface.
+                     */
+                    FlattenWaterSurface(mesh);
+                }
+
                 if (m_manager.EnableExport) {
                     /* Save the mesh as a new asset. */
                     MeshUtility.SetMeshCompression(mesh, ModelImporterMeshCompression.Medium);
                     AssetDatabase.CreateAsset(
                         mesh,
                         String.Format("{0}/Meshes/Tile_{1}_{2}_{3}.asset",
-                            k_exportPath, m_tileIndexX, m_tileIndexY, meshIndex));
+                            ExportPath, m_tileIndexX, m_tileIndexY, meshIndex));
                     AssetDatabase.SaveAssets();
                     AssetDatabase.Refresh();
                 }
 
                 /* Create an object to render this mesh. */
-                GameObject childObject = new GameObject("Mesh " + meshIndex);
+                GameObject childObject = new GameObject(
+                    "Mesh " + meshIndex + " (" + combinedMesh.type.ToString() + ")");
                 childObject.transform.parent = newObject.transform;
                 childObject.AddComponent<MeshFilter>().sharedMesh = mesh;
                 childObject.AddComponent<MeshRenderer>().sharedMaterial = m_manager.CombinedMaterial;
@@ -191,6 +226,23 @@ namespace MapGen {
                 m_tileIndexX, m_tileIndexY, wastage));
         }
 
+        private void FlattenWaterSurface(Mesh mesh) {
+            Vector3[] vertices = mesh.vertices;
+
+            /*
+             * Get minimum value. This should ensure matching between this tile
+             * and adjacent ones.
+             */
+            float height = float.MaxValue;
+            for (int i = 0; i < vertices.Length; i++)
+                height = Math.Min(vertices[i].y, height);
+
+            for (int i = 0; i < vertices.Length; i++)
+                vertices[i].y = height;
+
+            mesh.vertices = vertices;
+        }
+
         public void Finish() {
             if (m_manager.EnableExport)
                 Observable.Start(() => ExportPrefab(), Scheduler.MainThread).Wait();
@@ -200,7 +252,7 @@ namespace MapGen {
 
         private void ExportPrefab() {
             /* Create a prefab out of the world. */
-            UnityEngine.Object prefab = PrefabUtility.CreateEmptyPrefab(k_exportPath + "/Map.prefab");
+            UnityEngine.Object prefab = PrefabUtility.CreateEmptyPrefab(ExportPath + "/Map.prefab");
             PrefabUtility.ReplacePrefab(m_containerObject, prefab, ReplacePrefabOptions.ConnectToPrefab);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();

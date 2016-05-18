@@ -204,6 +204,7 @@ MonoBehaviour:
   WorldSize: {x: 3, y: 3}
   DetailedWorldSize: {x: 3, y: 3}
   CombinedMaterial: {fileID: 2100000, guid: 02db822e4dc907744bd988578087550c, type: 2}
+  EnableWaterSeparation: 1
   EnableMeshReduction: 0
   EnableExport: 1
   FilterInfoNodes: 1
