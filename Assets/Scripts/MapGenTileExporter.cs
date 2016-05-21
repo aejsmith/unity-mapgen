@@ -8,23 +8,18 @@ using UnityEditor;
 
 namespace MapGen {
     public class MapGenTileExporter {
-        private enum MeshType {
-            Generic,
-            Water,
-        };
-
         private class SourceMesh {
             public MeshType type;
             public Mesh mesh;
             public Matrix4x4 transform;
             public int vertexCount;
-        };
+        }
 
         private class CombinedMesh {
             public MeshType type;
             public int totalVertexCount;
             public List<CombineInstance> combines = new List<CombineInstance>();
-        };
+        }
 
         /** Path to export world to. */
         private const string ExportParent = "Assets/Map";
@@ -106,10 +101,28 @@ namespace MapGen {
 
                         SourceMesh sourceMesh = new SourceMesh();
 
-                        if (meshFilter.name == "water") {
-                            sourceMesh.type = MeshType.Water;
+                        /*
+                         * Ignore partial buildings for mesh reduction, we don't
+                         * handle these properly.
+                         */
+                        var parent = meshFilter.transform.parent;
+                        if (parent != null && parent.name.Contains("building:part:yes")) {
+                            sourceMesh.type = MeshType.Other;
                         } else {
-                            sourceMesh.type = MeshType.Generic;
+                            switch (meshFilter.name) {
+                                case "water":
+                                    sourceMesh.type = MeshType.Water;
+                                    break;
+                                case "wall":
+                                    sourceMesh.type = MeshType.Wall;
+                                    break;
+                                case "floor":
+                                    sourceMesh.type = MeshType.Floor;
+                                    break;
+                                default:
+                                    sourceMesh.type = MeshType.Other;
+                                    break;
+                            }
                         }
 
                         sourceMesh.mesh = meshFilter.mesh;
@@ -120,6 +133,8 @@ namespace MapGen {
                 },
                 Scheduler.MainThread).Wait();
 
+            int vertexReduction = 0;
+
             /*
              * Try to combine all the meshes into smaller meshes. Basic bin
              * packing problem, use a greedy first-fit algorithm.
@@ -129,13 +144,15 @@ namespace MapGen {
                 int vertexCount = sourceMesh.vertexCount;
 
                 /* Reduce the complexity of the mesh. */
-                if (m_manager.EnableMeshReduction)
-                    mesh = new MeshReducer().Reduce(mesh, 0.9f, out vertexCount);
+                if (m_manager.EnableMeshReduction) {
+                    mesh = new MeshReducer().Reduce(mesh, sourceMesh.type, out vertexCount);
+                    vertexReduction += sourceMesh.vertexCount - vertexCount;
+                }
 
                 MeshType combinedType =
                     (m_manager.EnableWaterSeparation && sourceMesh.type == MeshType.Water)
                         ? MeshType.Water
-                        : MeshType.Generic;
+                        : MeshType.Other;
 
                 /* Find a mesh that can fit this one. */
                 CombinedMesh combinedMesh = null;
@@ -161,6 +178,9 @@ namespace MapGen {
                 combinedMesh.combines.Add(combine);
                 combinedMesh.totalVertexCount += vertexCount;
             }
+
+            if (m_manager.EnableMeshReduction)
+                Debug.LogWarning("Reduced total vertex count by " + vertexReduction);
         }
         
         private void GenerateAndExportObjects() {

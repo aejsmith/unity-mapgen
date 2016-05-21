@@ -7,34 +7,17 @@ using UnityEngine.Assertions;
 using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace MapGen {
-    /**
-     * Class to a reduce the complexity of a mesh.
-     *
-     * This class implements a mesh reduction algorithm, based on Stan Melax's
-     * Progressive Mesh type Polygon Reduction Algorithm, found here:
-     * https://github.com/melax/sandbox/blob/master/bunnylod/progmesh.cpp
-     */
+    /** Class to reduce mesh complexity. */
     public class MeshReducer {
         private class Vertex {
             public Vector3 position;
-            public Vector2 uv;
             public Color colour;
             public Vector3 normal;
             public int newIndex;
-            public HashSet<Vertex> neighbours = new HashSet<Vertex>();
             public List<Triangle> triangles = new List<Triangle>();
-            public float cost;
-            public Vertex collapse;
 
-            public void RemoveIfNonNeighbour(Vertex vertex) {
-                if (neighbours.Contains(vertex)) {
-                    foreach (Triangle triangle in triangles) {
-                        if (triangle.HasVertex(vertex))
-                            return;
-                    }
-
-                    neighbours.Remove(vertex);
-                }
+            public bool IsDead() {
+                return triangles.Count == 0;
             }
 
             public override bool Equals(object obj) {
@@ -42,7 +25,6 @@ namespace MapGen {
                 return
                     position == other.position &&
                     normal == other.normal &&
-                    uv == other.uv &&
                     (Vector4)colour == (Vector4)other.colour;
             }
 
@@ -50,7 +32,6 @@ namespace MapGen {
                 int hash = 0;
                 hash += position.GetHashCode();
                 hash += normal.GetHashCode();
-                hash += uv.GetHashCode();
                 hash += colour.GetHashCode();
                 return hash;
             }
@@ -60,67 +41,45 @@ namespace MapGen {
             public Vertex[] vertices = new Vertex[3];
             public Vector3 normal;
 
-            public bool HasVertex(Vertex vertex) {
-                return vertex == vertices[0] || vertex == vertices[1] || vertex == vertices[2];
-            }
-
-            public void ReplaceVertex(Vertex oldVertex, Vertex newVertex) {
-                Assert.IsTrue(oldVertex != null && newVertex != null);
-                Assert.IsTrue(oldVertex == vertices[0] || oldVertex == vertices[1] || oldVertex == vertices[2]);
-                Assert.IsTrue(newVertex != vertices[0] && newVertex != vertices[1] && newVertex != vertices[2]);
-
-                if (oldVertex == vertices[0]) {
-                    vertices[0] = newVertex;
-                } else if (oldVertex == vertices[1]) {
-                    vertices[1] = newVertex;
-                } else {
-                    vertices[2] = newVertex;
-                }
-
-                oldVertex.triangles.Remove(this);
-                Assert.IsTrue(!newVertex.triangles.Contains(this));
-                newVertex.triangles.Add(this);
-
-                for (int i = 0; i < 3; i++) {
-                    oldVertex.RemoveIfNonNeighbour(vertices[i]);
-                    vertices[i].RemoveIfNonNeighbour(oldVertex);
-                }
-
-                for (int i = 0; i < 3; i++) {
-                    Assert.IsTrue(vertices[i].triangles.Contains(this));
-
-                    for (int j = 0; j < 3; j++) {
-                        if (i != j)
-                            vertices[i].neighbours.Add(vertices[j]);
-                    }
-                }
-
-                ComputeNormal();
-            }
-
             public void ComputeNormal() {
                 normal = Vector3.Cross(
                     vertices[1].position - vertices[0].position,
                     vertices[2].position - vertices[1].position);
                 normal.Normalize();
             }
+
+            public bool Adjacent(Triangle other) {
+                for (int i = 0; i < 3; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        if (vertices[i].position == other.vertices[j].position)
+                            return true;
+                    }
+                }
+
+                return false;
+            }
         };
 
+        private class Face {
+            public Vector3 normal;
+            public List<Triangle> triangles = new List<Triangle>();
+        }
+
         private Dictionary<Vertex, Vertex> m_vertices;
+        private int m_liveVertexCount;
         private List<Triangle> m_triangles;
 
         /** Reduce a mesh.
          * @param origMesh       Mesh to reduce.
-         * @param factor         Factor to reduce by (between 0 and 1).
+         * @param meshType       Type of the mesh.
          * @param newVertexCount Output vertex count.
          * @return               Reduced mesh. */
-        public Mesh Reduce(Mesh origMesh, float factor, out int newVertexCount) {
+        public Mesh Reduce(Mesh origMesh, MeshType meshType, out int newVertexCount) {
             Stopwatch stopwatch = new Stopwatch();
             stopwatch.Start();
 
             Vector3[] origVertices = null;
             Vector3[] origNormals = null;
-            Vector2[] origUV = null;
             Color[] origColours = null;
             int[] origTriangles = null;
 
@@ -129,7 +88,6 @@ namespace MapGen {
                 () => {
                     origVertices = origMesh.vertices;
                     origNormals = origMesh.normals;
-                    origUV = origMesh.uv;
                     origColours = origMesh.colors;
                     origTriangles = origMesh.triangles;
                 },
@@ -159,7 +117,6 @@ namespace MapGen {
                     Vertex vertex = new Vertex();
                     vertex.position = origVertices[origTriangles[i + j]];
                     vertex.normal = origNormals[origTriangles[i + j]];
-                    vertex.uv = origUV[origTriangles[i + j]];
                     vertex.colour = origColours[origTriangles[i + j]];
 
                     Vertex exist;
@@ -173,43 +130,36 @@ namespace MapGen {
 
                 triangle.ComputeNormal();
 
-                for (int j = 0; j < 3; j++) {
+                for (int j = 0; j < 3; j++)
                     triangle.vertices[j].triangles.Add(triangle);
-                    for (int k = 0; k < 3; k++) {
-                        /* Uniqueness is enforced as neighbours is a HashSet. */
-                        if (k != j)
-                            triangle.vertices[j].neighbours.Add(triangle.vertices[k]);
-                    }
-                }
 
                 m_triangles.Add(triangle);
             }
 
-            /* Compute all edge collapse costs. */
-            foreach (Vertex vertex in m_vertices.Values)
-                ComputeEdgeCostAtVertex(vertex);
+            m_liveVertexCount = m_vertices.Count;
 
-            /* Calculate target number of vertices. */
-            int targetVertices = (int)((float)origVertices.Length * factor);
-
-            /* Collapse until we reach this target. */
-            //while (m_vertices.Count > targetVertices) {
-            //    Vertex vertex = MinimumCostEdge();
-            //    Collapse(vertex, vertex.collapse);
-            //}
+            switch (meshType) {
+                case MeshType.Floor:
+                    ReduceFloor();
+                    break;
+                case MeshType.Wall:
+                    ReduceWall();
+                    break;
+            }
 
             /* Create new vertex data. */
-            Vector3[] newVertices = new Vector3[m_vertices.Count];
-            Vector3[] newNormals = new Vector3[m_vertices.Count];
-            Vector2[] newUV = new Vector2[m_vertices.Count];
-            Color[] newColours = new Color[m_vertices.Count];
+            Vector3[] newVertices = new Vector3[m_liveVertexCount];
+            Vector3[] newNormals = new Vector3[m_liveVertexCount];
+            Color[] newColours = new Color[m_liveVertexCount];
             int newIndex = 0;
             foreach (Vertex vertex in m_vertices.Values) {
+                if (vertex.IsDead())
+                    continue;
+
                 vertex.newIndex = newIndex++;
 
                 newVertices[vertex.newIndex] = vertex.position;
                 newNormals[vertex.newIndex] = vertex.normal;
-                newUV[vertex.newIndex] = vertex.uv;
                 newColours[vertex.newIndex] = vertex.colour;
             }
 
@@ -227,10 +177,8 @@ namespace MapGen {
                     Mesh mesh = new Mesh();
                     mesh.vertices = newVertices;
                     mesh.normals = newNormals;
-                    mesh.uv = newUV;
                     mesh.colors = newColours;
                     mesh.triangles = newTriangles;
-                    mesh.RecalculateNormals();
                     mesh.Optimize();
                     return mesh;
                 },
@@ -240,111 +188,173 @@ namespace MapGen {
 
             Debug.Log(String.Format(
                 "Reduced {0}/{1} to {2}/{3} in {4}ms",
-                origVertices.Length, origTriangles.Length / 3, m_vertices.Count,
+                origVertices.Length, origTriangles.Length / 3, m_liveVertexCount,
                 m_triangles.Count, stopwatch.ElapsedMilliseconds));
 
-            newVertexCount = m_vertices.Count;
+            newVertexCount = m_liveVertexCount;
             return newMesh;
         }
 
-        private void ComputeEdgeCostAtVertex(Vertex vertex) {
-            if (vertex.neighbours.Count == 0) {
-                vertex.cost = -0.01f;
-                return;
+        private void ReduceFloor() {
+            /*
+             * What ActionStreetMap calls the floor actually contains the roof
+             * and the floor, and the floor is pretty much useless because it's
+             * not visible. So what we do here is strip it out. There is some
+             * variation in the Y coordinates of the floor and roof surfaces,
+             * so what we do is get the minimum and maximum Y coordinates, then
+             * strip out anything that's close to the minimum.
+             */
+
+            float minimumY = float.MaxValue;
+            float maximumY = float.MinValue;
+
+            foreach (var vertex in m_vertices.Values) {
+                minimumY = Mathf.Min(minimumY, vertex.position.y);
+                maximumY = Mathf.Max(maximumY, vertex.position.y);
             }
 
-            vertex.cost = float.MaxValue;
+            foreach (var vertex in m_vertices.Values) {
+                if (vertex.position.y - minimumY <= 2.0f)
+                    KillVertex(vertex);
+            }
+        }
 
-            foreach (Vertex neighbour in vertex.neighbours) {
-                float cost = ComputeEdgeCollapseCost(vertex, neighbour);
-                if (cost < vertex.cost) {
-                    vertex.collapse = neighbour;
-                    vertex.cost = cost;
+        private void ReduceWall() {
+            var faces = new List<Face>();
+
+            foreach (var triangle in m_triangles) {
+                Face targetFace = null;
+
+                for (int i = 0; i < faces.Count; i++) {
+                    if (faces[i].normal != triangle.normal)
+                        continue;
+
+                    foreach (var otherTriangle in faces[i].triangles) {
+                        if (triangle.Adjacent(otherTriangle)) {
+                            if (targetFace == null) {
+                                targetFace = faces[i];
+                                targetFace.triangles.Add(triangle);
+                            } else {
+                                targetFace.triangles.AddRange(faces[i].triangles);
+                                faces.RemoveAt(i--);
+                            }
+
+                            break;
+                        }
+                    }
+                }
+
+                if (targetFace == null) {
+                    targetFace = new Face();
+                    targetFace.normal = triangle.normal;
+                    targetFace.triangles.Add(triangle);
+                    faces.Add(targetFace);
                 }
             }
-        }
 
-        private float ComputeEdgeCollapseCost(Vertex u, Vertex v) {
-            float edgeLength = Vector3.Distance(v.position, u.position);
+            foreach (var face in faces) {
+                Vertex minX = null;
+                Vertex maxX = null;
+                Vertex minY = null;
+                Vertex maxY = null;
+                Vertex minZ = null;
+                Vertex maxZ = null;
 
-            var sides = new List<Triangle>();
-            foreach (Triangle i in u.triangles) {
-                if (i.HasVertex(v))
-                    sides.Add(i);
-            }
+                foreach (var triangle in face.triangles) {
+                    for (int i = 0; i < 3; i++) {
+                        if (minX == null || triangle.vertices[i].position.x < minX.position.x)
+                            minX = triangle.vertices[i];
+                        if (maxX == null || triangle.vertices[i].position.x > maxX.position.x)
+                            maxX = triangle.vertices[i];
+                        if (minY == null || triangle.vertices[i].position.y < minY.position.y)
+                            minY = triangle.vertices[i];
+                        if (maxY == null || triangle.vertices[i].position.y > maxY.position.y)
+                            maxY = triangle.vertices[i];
+                        if (minZ == null || triangle.vertices[i].position.z < minZ.position.z)
+                            minZ = triangle.vertices[i];
+                        if (maxZ == null || triangle.vertices[i].position.z > maxZ.position.z)
+                            maxZ = triangle.vertices[i];
 
-            float curvature = 0;
-
-            foreach (Triangle i in u.triangles) {
-                float minCurvature = 1.0f;
-
-                foreach (Triangle j in sides) {
-                    float dotProduct = Vector3.Dot(i.normal, j.normal);
-                    minCurvature = Math.Min(minCurvature, (1 - dotProduct) / 2.0f);
+                        /* We're completely replacing the face. */
+                        KillTriangle(triangle);
+                    }
                 }
 
-                curvature = Math.Max(curvature, minCurvature);
+                /*
+                 * Check which of the X and Z axes has the greatest difference
+                 * between minimum and maximum. This indicates which direction
+                 * the face extends in. Also need to figure out which way to
+                 * wind the vertices based on the normal.
+                 */
+                Vertex min;
+                Vertex max;
+                bool clockwise;
+                if (maxX.position.x - minX.position.x > maxZ.position.z - minZ.position.z) {
+                    min = minX;
+                    max = maxX;
+                    clockwise = face.normal.z < 0;
+                } else {
+                    min = minZ;
+                    max = maxZ;
+                    clockwise = face.normal.x > 0;
+                }
+
+                Func<Vertex, Vertex, Vertex> makeVertex = (Vertex from, Vertex y) => {
+                    Vertex vertex = new Vertex();
+                    vertex.position = new Vector3(from.position.x, y.position.y, from.position.z);
+                    vertex.colour = from.colour;
+                    vertex.normal = face.normal;
+
+                    Vertex exist;
+                    m_liveVertexCount++;
+                    if (m_vertices.TryGetValue(vertex, out exist)) {
+                        return exist;
+                    } else {
+                        m_vertices.Add(vertex, vertex);
+                        return vertex;
+                    }
+                };
+
+                /* Make a new face. */
+                Vertex bottomLeft = makeVertex(min, minY);
+                Vertex topLeft = makeVertex(min, maxY);
+                Vertex bottomRight = makeVertex(max, minY);
+                Vertex topRight = makeVertex(max, maxY);
+
+                Triangle newTriangle = new Triangle();
+                int i0 = (clockwise) ? 0 : 2;
+                int i1 = (clockwise) ? 1 : 1;
+                int i2 = (clockwise) ? 2 : 0;
+                newTriangle.vertices[i0] = bottomLeft; bottomLeft.triangles.Add(newTriangle);
+                newTriangle.vertices[i1] = topLeft; topLeft.triangles.Add(newTriangle);
+                newTriangle.vertices[i2] = bottomRight; bottomRight.triangles.Add(newTriangle);
+                newTriangle.normal = face.normal;
+                m_triangles.Add(newTriangle);
+                newTriangle = new Triangle();
+                newTriangle.vertices[i0] = bottomRight; bottomLeft.triangles.Add(newTriangle);
+                newTriangle.vertices[i1] = topLeft; topLeft.triangles.Add(newTriangle);
+                newTriangle.vertices[i2] = topRight; topRight.triangles.Add(newTriangle);
+                newTriangle.normal = face.normal;
+                m_triangles.Add(newTriangle);
             }
 
-            return edgeLength * curvature;
+            Debug.LogWarning("Face count = " + faces.Count);
         }
 
-        private Vertex MinimumCostEdge() {
-// FIXME: If too slow optimise this.
-            Vertex min = null;
-            foreach (Vertex vertex in m_vertices.Values) {
-                if (min == null || vertex.cost < min.cost)
-                    min = vertex;
-            }
-
-            return min;
+        private void KillVertex(Vertex vertex) {
+            while (vertex.triangles.Count > 0)
+                KillTriangle(vertex.triangles[0]);
         }
 
-        private void Collapse(Vertex u, Vertex v) {
-            if (v == null) {
-                RemoveVertex(u);
-                return;
-            }
-
-            var origNeighbours = new List<Vertex>(u.neighbours);
-
-            for (int i = u.triangles.Count - 1; i >= 0; i--) {
-                if (u.triangles[i].HasVertex(v))
-                    RemoveTriangle(u.triangles[i]);
-            }
-
-            for (int i = u.triangles.Count - 1; i >= 0; i--)
-                u.triangles[i].ReplaceVertex(u, v);
-
-            RemoveVertex(u);
-
-            foreach (Vertex vertex in origNeighbours)
-                ComputeEdgeCostAtVertex(vertex);
-        }
-
-        private void RemoveVertex(Vertex vertex) {
-            Assert.AreEqual(vertex.triangles.Count, 0);
-
-            foreach (Vertex neighbour in vertex.neighbours)
-                neighbour.neighbours.Remove(vertex);
-
-            vertex.neighbours.Clear();
-
-            m_vertices.Remove(vertex);
-        }
-
-        private void RemoveTriangle(Triangle triangle) {
-            for (int i = 0; i < 3; i++)
-                triangle.vertices[i].triangles.Remove(triangle);
-
-            for (int i = 0; i < 3; i++) {
-                int i2 = (i + 1) % 3;
-                triangle.vertices[i ].RemoveIfNonNeighbour(triangle.vertices[i2]);
-                triangle.vertices[i2].RemoveIfNonNeighbour(triangle.vertices[i ]);
-            }
-
+        private void KillTriangle(Triangle triangle) {
             m_triangles.Remove(triangle);
 
+            foreach (var vertex in triangle.vertices) {
+                bool wasDead = vertex.IsDead();
+                vertex.triangles.Remove(triangle);
+                if (!wasDead && vertex.IsDead())
+                    m_liveVertexCount--;
+            }
         }
     }
 }

@@ -203,10 +203,10 @@ MonoBehaviour:
   TileSize: 500
   WorldSize: {x: 3, y: 3}
   DetailedWorldSize: {x: 3, y: 3}
-  CombinedMaterial: {fileID: 2100000, guid: 02db822e4dc907744bd988578087550c, type: 2}
+  CombinedMaterial: {fileID: 2100000, guid: d66924768f2be2a458966a3f13c597bd, type: 2}
   EnableWaterSeparation: 1
-  EnableMeshReduction: 0
-  EnableExport: 1
+  EnableMeshReduction: 1
+  EnableExport: 0
   FilterInfoNodes: 1
   AddColliders: 0
 --- !u!1 &1313460263
