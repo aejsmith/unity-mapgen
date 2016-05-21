@@ -42,9 +42,6 @@ namespace MapGen {
         /** Material to use for the combined objects. */
         public Material CombinedMaterial;
 
-        /** Whether to enable water separation. */
-        public bool EnableWaterSeparation = false;
-
         /** Whether to enable mesh reduction. */
         public bool EnableMeshReduction = false;
 

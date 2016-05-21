@@ -35,6 +35,7 @@ namespace MapGen {
         private Tile m_tile;
         private int m_tileIndexX;
         private int m_tileIndexY;
+        private List<SourceMesh> m_sourceMeshes;
         private List<CombinedMesh> m_meshes;
 
         public MapGenTileExporter(MapGenManager manager) {
@@ -64,6 +65,7 @@ namespace MapGen {
             m_tile = tile;
             m_tileIndexX = (int)(m_tile.MapCenter.X / m_manager.TileSize);
             m_tileIndexY = (int)(m_tile.MapCenter.Y / m_manager.TileSize);
+            m_sourceMeshes = new List<SourceMesh>();
             m_meshes = new List<CombinedMesh>();
 
             Debug.LogWarning(String.Format("Generating tile {0} {1}", m_tileIndexX, m_tileIndexY));
@@ -82,6 +84,7 @@ namespace MapGen {
             Observable.Start(() => GenerateAndExportObjects(), Scheduler.MainThread).Wait();
 
             m_tile = null;
+            m_sourceMeshes = null;
             m_meshes = null;
         }
 
@@ -91,7 +94,6 @@ namespace MapGen {
              * the main thread.
              */
             GameObject origObject = m_tile.GameObject.GetComponent<GameObject>();
-            var sourceMeshes = new List<SourceMesh>();
             Observable.Start(
                 () => {
                     Component[] components = origObject.GetComponentsInChildren<MeshFilter>();
@@ -128,7 +130,7 @@ namespace MapGen {
                         sourceMesh.mesh = meshFilter.mesh;
                         sourceMesh.transform = meshFilter.transform.localToWorldMatrix;
                         sourceMesh.vertexCount = meshFilter.mesh.vertexCount;
-                        sourceMeshes.Add(sourceMesh);
+                        m_sourceMeshes.Add(sourceMesh);
                     }
                 },
                 Scheduler.MainThread).Wait();
@@ -139,27 +141,21 @@ namespace MapGen {
              * Try to combine all the meshes into smaller meshes. Basic bin
              * packing problem, use a greedy first-fit algorithm.
              */
-            foreach (SourceMesh sourceMesh in sourceMeshes) {
-                Mesh mesh = sourceMesh.mesh;
-                int vertexCount = sourceMesh.vertexCount;
-
+            foreach (SourceMesh sourceMesh in m_sourceMeshes) {
                 /* Reduce the complexity of the mesh. */
                 if (m_manager.EnableMeshReduction) {
-                    mesh = new MeshReducer().Reduce(mesh, sourceMesh.type, out vertexCount);
+                    int vertexCount;
+                    sourceMesh.mesh = new MeshReducer().Reduce(sourceMesh.mesh, sourceMesh.type, out vertexCount);
                     vertexReduction += sourceMesh.vertexCount - vertexCount;
+                    sourceMesh.vertexCount = vertexCount;
                 }
-
-                MeshType combinedType =
-                    (m_manager.EnableWaterSeparation && sourceMesh.type == MeshType.Water)
-                        ? MeshType.Water
-                        : MeshType.Other;
 
                 /* Find a mesh that can fit this one. */
                 CombinedMesh combinedMesh = null;
                 foreach (CombinedMesh existingMesh in m_meshes) {
-                    if (existingMesh.type != combinedType) {
+                    if (existingMesh.type != sourceMesh.type) {
                         continue;
-                    } else if (existingMesh.totalVertexCount + vertexCount > 65534) {
+                    } else if (existingMesh.totalVertexCount + sourceMesh.vertexCount > 65534) {
                         continue;
                     }
 
@@ -168,15 +164,15 @@ namespace MapGen {
                 }
                 if (combinedMesh == null) {
                     combinedMesh = new CombinedMesh();
-                    combinedMesh.type = combinedType;
+                    combinedMesh.type = sourceMesh.type;
                     m_meshes.Add(combinedMesh);
                 }
 
                 CombineInstance combine = new CombineInstance();
-                combine.mesh = mesh;
+                combine.mesh = sourceMesh.mesh;
                 combine.transform = sourceMesh.transform;
                 combinedMesh.combines.Add(combine);
-                combinedMesh.totalVertexCount += vertexCount;
+                combinedMesh.totalVertexCount += sourceMesh.vertexCount;
             }
 
             if (m_manager.EnableMeshReduction)
@@ -200,19 +196,13 @@ namespace MapGen {
 
                 wastage += 65534 - combinedMesh.totalVertexCount;
 
+                foreach (CombineInstance combine in combinedMesh.combines) {
+                    if (combine.mesh == null)
+                        throw new Exception("IT'S NULL");
+                }
                 Mesh mesh = new Mesh();
                 mesh.CombineMeshes(combinedMesh.combines.ToArray());
                 mesh.Optimize();
-
-                if (combinedMesh.type == MeshType.Water) {
-                    /*
-                     * Flatten the water surface. The reason for the water
-                     * separation is so that it can have Unity's water shader
-                     * placed on it. This does not look right with a non-flat
-                     * surface.
-                     */
-                    FlattenWaterSurface(mesh);
-                }
 
                 if (m_manager.EnableExport) {
                     /* Save the mesh as a new asset. */
@@ -244,23 +234,6 @@ namespace MapGen {
             Debug.LogWarning(String.Format(
                 "Generated tile {0} {1}, wasted {2} vertices",
                 m_tileIndexX, m_tileIndexY, wastage));
-        }
-
-        private void FlattenWaterSurface(Mesh mesh) {
-            Vector3[] vertices = mesh.vertices;
-
-            /*
-             * Get minimum value. This should ensure matching between this tile
-             * and adjacent ones.
-             */
-            float height = float.MaxValue;
-            for (int i = 0; i < vertices.Length; i++)
-                height = Math.Min(vertices[i].y, height);
-
-            for (int i = 0; i < vertices.Length; i++)
-                vertices[i].y = height;
-
-            mesh.vertices = vertices;
         }
 
         public void Finish() {
