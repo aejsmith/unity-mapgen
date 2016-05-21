@@ -5,7 +5,7 @@
         _Metallic ("Metallic", Range(0,1)) = 0.33
     }
     SubShader {
-        Tags { "RenderType"="Opaque" }
+        Tags { "RenderType"="Opaque" "MapType" = "Ground" }
         LOD 200
      
         CGPROGRAM
@@ -15,10 +15,7 @@
         // Use shader model 3.0 target, to get nicer looking lighting
         #pragma target 3.0
  
-        sampler2D _MainTex;
- 
         struct Input {
-            float2 uv_MainTex;
             float4 color : COLOR;
         };
  
